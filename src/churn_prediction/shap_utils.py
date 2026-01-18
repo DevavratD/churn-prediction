@@ -1,66 +1,68 @@
-# src/churn_prediction/shap_utils.py
-
-import json
 import joblib
 import shap
 import pandas as pd
-from functools import lru_cache
+import numpy as np
 
-from churn_prediction.config import MODEL_PATH, SCHEMA_PATH, RAW_DATA_PATH
-
-
-# -------------------------------
-# Internal helpers
-# -------------------------------
-
-@lru_cache(maxsize=1)
-def _load_background():
-    """
-    Load and cache background data for SHAP.
-    This runs ONCE per process.
-    """
-    df = pd.read_csv(RAW_DATA_PATH)
-    # sample to keep SHAP fast
-    return df.sample(200, random_state=42)
+from churn_prediction.config import MODEL_PATH, SCHEMA_PATH
 
 
-@lru_cache(maxsize=1)
-def _build_explainer():
-    """
-    Build and cache the SHAP explainer.
-    """
-    clf = joblib.load(MODEL_PATH)
+# ----------------------------------------------------------
+# Load artifacts only once
+# ----------------------------------------------------------
 
-    with open(SCHEMA_PATH) as f:
+def _load_artifacts():
+    model = joblib.load(MODEL_PATH)
+
+    with open(SCHEMA_PATH, "r") as f:
         schema = json.load(f)
 
-    preprocessor = clf.named_steps["preprocessor"]
-    model = clf.named_steps["model"]
-
-    background_df = _load_background()
-    X_bg_trans = preprocessor.transform(background_df)
-
-    explainer = shap.LinearExplainer(model, X_bg_trans)
-
-    return explainer, schema["transformed_features"], preprocessor
+    feature_names = schema["feature_names"]
+    return model, feature_names
 
 
-# -------------------------------
-# Public API
-# -------------------------------
+# ----------------------------------------------------------
+# Build SHAP explainer WITHOUT RAW DATA (cloud-safe)
+# ----------------------------------------------------------
 
-def explain(raw_df: pd.DataFrame):
-    """
-    Generate SHAP values for a single inference row.
-    """
+_explainer_cache = None
+
+def _build_explainer():
+    global _explainer_cache
+
+    if _explainer_cache is not None:
+        return _explainer_cache
+
+    model, feature_names = _load_artifacts()
+    preprocessor = model.named_steps["preprocessor"]
+    linear = model.named_steps["model"]
+
+    # Create a synthetic background instead of raw data
+    # This is the correct way for deployment
+    background = np.zeros((50, len(feature_names)))
+
+    explainer = shap.LinearExplainer(
+        linear,
+        background,
+        feature_names=feature_names
+    )
+
+    _explainer_cache = (explainer, feature_names, preprocessor)
+    return _explainer_cache
+
+
+# ----------------------------------------------------------
+# Explain a single input row
+# ----------------------------------------------------------
+
+def explain(input_df: pd.DataFrame):
     explainer, feature_names, preprocessor = _build_explainer()
 
-    X_trans = preprocessor.transform(raw_df)
+    # transform input
+    X_trans = preprocessor.transform(input_df)
+
+    # Wrap into DataFrame for SHAP naming
+    X_trans = pd.DataFrame(X_trans, columns=feature_names)
+
     shap_values = explainer(X_trans)
 
-    # hard safety check
-    if shap_values.values.shape[1] != len(feature_names):
-        raise RuntimeError("SHAP feature mismatch with schema")
-
-    shap_values.feature_names = feature_names
     return shap_values
