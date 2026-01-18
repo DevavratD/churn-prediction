@@ -2,6 +2,7 @@ import joblib
 import shap
 import pandas as pd
 import numpy as np
+import json
 
 from churn_prediction.config import MODEL_PATH, SCHEMA_PATH
 
