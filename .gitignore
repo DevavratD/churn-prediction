@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environments
+.venv/
+env/
+venv/
+
+# UV
+.uv/
+
+# Models
+models/*.joblib
+models/*.pkl
+
+# Data 
+data/raw/*
+data/sample/*
+
+# Streamlit cache
+.streamlit/
+
+# VSCode
+.vscode/
