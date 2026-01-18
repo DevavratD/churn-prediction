@@ -11,13 +11,10 @@ venv/
 # UV
 .uv/
 
-# Models
-models/*.joblib
-models/*.pkl
 
 # Data 
 data/raw/*
-data/sample/*
+
 
 # Streamlit cache
 .streamlit/
